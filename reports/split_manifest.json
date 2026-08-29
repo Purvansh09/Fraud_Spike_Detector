@@ -1,0 +1,37 @@
+{
+  "seed": 7,
+  "n_transactions": 34336,
+  "test_set_sha256": "0afd1a7565fd1d943be3292db83dc461a631af359dc95110651ad9b4a91b8bb3",
+  "test_set_size": 5857,
+  "boundaries": {
+    "train": [
+      0,
+      40
+    ],
+    "val": [
+      40,
+      50
+    ],
+    "test": [
+      50,
+      61
+    ]
+  },
+  "per_split": {
+    "train": {
+      "transactions": 22775,
+      "fraud": 460,
+      "episodes": 79
+    },
+    "val": {
+      "transactions": 5704,
+      "fraud": 135,
+      "episodes": 23
+    },
+    "test": {
+      "transactions": 5857,
+      "fraud": 113,
+      "episodes": 18
+    }
+  }
+}

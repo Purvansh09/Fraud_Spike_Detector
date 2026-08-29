@@ -1,0 +1,17 @@
+# Pinned to what Phase 1 was actually built and verified against (2026-08-29).
+pandas==3.0.5
+numpy==2.5.2
+pyarrow==25.0.1
+scikit-learn==1.9.0
+xgboost==3.4.1
+imbalanced-learn==0.14.2
+shap==0.52.0
+matplotlib==3.11.1
+joblib==1.5.3
+
+# Service layer (Phase 5)
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+python-dotenv==1.2.3
+anthropic==1.2.0
