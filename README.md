@@ -56,8 +56,29 @@ PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
 | `src/fraudspike/generate.py` | Synthetic transaction + fraud-episode generator |
 | `src/fraudspike/audit_data.py` | Adversarial audit: tries to break our own dataset |
 | `src/fraudspike/splits.py` | Temporal split assignment, pins the test-set hash |
-| `reports/data_audit.md` | Latest audit output |
+| `src/fraudspike/features.py` | 33 strictly backward-looking features |
+| `src/fraudspike/audit_features.py` | Flags any single feature that looks too good to be true |
+| `tests/test_causality.py` | Proves no feature can see the future |
+| `reports/data_audit.md` | Latest data audit output |
+| `reports/feature_audit.md` | Per-feature discriminative power, train split only |
 | `reports/split_manifest.json` | Split sizes and the test-set SHA-256 |
+
+## How we know there is no leakage
+
+Three independent guards, in increasing order of how much they'd convince a sceptic:
+
+1. **Structural.** Labels live in a separate frame. The feature builder's input does not
+   contain `is_fraud` or `episode_id`, so it cannot use them even by accident.
+2. **Empirical.** `tests/test_causality.py` rebuilds every feature from a stream truncated at
+   day 10, 25, 40 and 50, and asserts each row is bit-for-bit identical to the same row built
+   from the full 60 days — NaN patterns included. Anything that peeked forward would differ.
+3. **The test is itself tested.** We planted a deliberate look-ahead feature (an account's
+   all-time mean amount) and confirmed the truncation test fails on all four cut points, then
+   removed it. A green suite that cannot go red proves nothing.
+
+```bash
+./.venv/Scripts/python.exe -m pytest tests/ -q
+```
 
 ## Why synthetic data
 

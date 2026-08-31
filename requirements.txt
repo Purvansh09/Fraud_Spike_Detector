@@ -1,4 +1,4 @@
-# Pinned to what Phase 1 was actually built and verified against (2026-08-29).
+# Pinned to what Phase 1 was actually built and verified against (2026-08-31).
 pandas==3.0.5
 numpy==2.5.2
 pyarrow==25.0.1

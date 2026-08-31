@@ -126,17 +126,17 @@ Reported on the held-out test set, once:
 
 ## Changelog
 
-- 2026-08-29 — initial specification, frozen before any data was generated.
-- 2026-08-29 — **city leak found and fixed.** The first `audit_data` run measured
+- 2026-08-31 — initial specification, frozen before any data was generated.
+- 2026-08-31 — **city leak found and fixed.** The first `audit_data` run measured
   "city != account's usual city" at **100% precision / 60.9% recall** — legitimate accounts never
   left home, so that one column was a perfect classifier. Added the legitimate-travel confounder
   (section 2, item 6) and regenerated; the marker now sits at 16.8% precision. No model had been
   trained at the point this was caught.
-- 2026-08-29 — device novelty redefined as *age of the device on the account*, not first
+- 2026-08-31 — device novelty redefined as *age of the device on the account*, not first
   appearance. First-appearance fires only on an episode's opening transaction, which is never yet
   inside a burst, so it could never combine with a velocity signal. This shaped the Phase 2
   feature set.
-- 2026-08-29 — scale raised from 400 to 600 accounts and the compromise rate from 8% to 20%, to
+- 2026-08-31 — scale raised from 400 to 600 accounts and the compromise rate from 8% to 20%, to
   put enough fraud episodes in the test window to report on. See the caveat in section 4.
-- 2026-08-29 — the dataset spans a 61st day holding 6 transactions: one legitimate checkout
+- 2026-08-31 — the dataset spans a 61st day holding 6 transactions: one legitimate checkout
   session that began at 23:5x on day 59 and ran past midnight. Realistic, left in place.
