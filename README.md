@@ -36,6 +36,28 @@ Recall is not uniform across attack styles, and the average hides that:
 Session hijacks are the weak point — by construction they carry no device-novelty signal at
 all, so the model has only velocity and amount to work with.
 
+### What that is worth
+
+At the operating threshold chosen on validation, over the 11-day test window
+([`reports/cost_analysis.md`](reports/cost_analysis.md)):
+
+| | amount |
+|---|---|
+| Fraud loss avoided | ₹912,201 |
+| False-positive cost | ₹34,598 |
+| Residual fraud cost | ₹77,018 |
+| **Net saving vs no detector** | **₹877,603** |
+
+Savings are episode-aware: blocking the 3rd transaction of an 8-transaction burst prevents
+six, not one, because the account is frozen behind the decline.
+
+The threshold is **completely insensitive** to false-positive pricing across every plausible
+assumption — because the average fraud ticket (₹6,844) is an order of magnitude larger than
+the cost of a wrong decline (~₹2,021). It only starts to move once a false positive costs
+about **₹5,000, roughly 73% of a fraudulent transaction**. So the claim is not "this is
+robust" but: *robust provided a wrongly declined customer costs you less than three-quarters
+of a fraud*. A high-LTV lender should re-run it with their own figures.
+
 ---
 
 ## Quickstart
@@ -73,6 +95,8 @@ PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
 | `src/fraudspike/evaluate.py` | The only script that opens the test set. Runs once. |
 | `reports/validation_report.md` | Grid, baselines, SMOTE ablation, chosen threshold |
 | `reports/test_report.md` | The held-out numbers |
+| `src/fraudspike/costs.py` | Cost model, threshold economics, sensitivity + stress test |
+| `reports/cost_analysis.md` | Rupee analysis and where the recommendation breaks |
 | `tests/test_causality.py` | Proves no feature can see the future |
 | `reports/data_audit.md` | Latest data audit output |
 | `reports/feature_audit.md` | Per-feature discriminative power, train split only |
