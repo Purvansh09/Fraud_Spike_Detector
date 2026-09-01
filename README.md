@@ -97,7 +97,11 @@ PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
 | `reports/test_report.md` | The held-out numbers |
 | `src/fraudspike/costs.py` | Cost model, threshold economics, sensitivity + stress test |
 | `reports/cost_analysis.md` | Rupee analysis and where the recommendation breaks |
+| `src/fraudspike/serving.py` | Live scorer + account history store + decision bands |
+| `src/fraudspike/explain.py` | SHAP attribution, Claude reason, template fallback |
+| `api/app/main.py` | FastAPI service |
 | `tests/test_causality.py` | Proves no feature can see the future |
+| `tests/test_serving.py` | Proves serving features match training features exactly |
 | `reports/data_audit.md` | Latest data audit output |
 | `reports/feature_audit.md` | Per-feature discriminative power, train split only |
 | `reports/split_manifest.json` | Split sizes and the test-set SHA-256 |
@@ -118,6 +122,30 @@ Three independent guards, in increasing order of how much they'd convince a scep
 ```bash
 ./.venv/Scripts/python.exe -m pytest tests/ -q
 ```
+
+## Running the service
+
+```bash
+PYTHONPATH=src ./.venv/Scripts/python.exe -m uvicorn api.app.main:app --reload
+```
+
+`POST /score` returns a risk score, a decision band, the SHAP factors behind it, and one
+sentence of plain English. `GET /model` reports the deployed thresholds and where they came
+from. `GET /demo/flagged` serves the Phase 6 dashboard.
+
+Decision bands, both calibrated on validation and never on test:
+
+| band | threshold | meaning |
+|---|---|---|
+| `ALLOW` | < 0.0071 | clear automatically |
+| `REVIEW` | 0.0071 – 0.1282 | hold for a human; the band retains 95% fraud recall |
+| `BLOCK` | >= 0.1282 | decline; this is the Phase 4 cost-optimal point |
+
+Explanations are optional by design. Set `ANTHROPIC_API_KEY` in `.env` (see `.env.example`)
+and Claude phrases the SHAP attributions; without a key, a deterministic template renders the
+same facts. **The decision never depends on the API** — Claude is given the attributions and
+asked to phrase them, never asked whether the transaction is fraud, and its output is
+generated after the decision is already made.
 
 ## Why synthetic data
 
