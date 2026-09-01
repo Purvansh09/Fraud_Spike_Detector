@@ -11,19 +11,30 @@ detector.
 
 ## Headline numbers
 
-> Held-out test metrics land here at the end of Phase 3. The test set is pinned by SHA-256 in
-> `reports/split_manifest.json` and is scored exactly once. Nothing is reported before then.
+**Held-out test set, 5,865 transactions, 121 fraud, scored exactly once** at the threshold
+chosen on validation. Full report: [`reports/test_report.md`](reports/test_report.md).
 
-What is measured today, on the generated dataset:
-
-| Hand-written rule (no model) | Precision | Recall | F1 |
+| | Precision | Recall | F1 |
 |---|---|---|---|
-| 4+ transactions in 10 min | 17.1% | 49.0% | 0.254 |
-| Device new to account (<1h) | 31.3% | 99.4% | 0.476 |
-| **Burst AND new device** | **81.2%** | **48.9%** | **0.610** |
+| always-legitimate | 0.0% | 0.0% | 0.000 |
+| rule: burst AND new device | 67.9% | 31.4% | 0.429 |
+| **XGBoost** | **82.3%** | **84.3%** | **0.833** |
 
-That last row is the bar the model has to clear. A gradient-boosted model that cannot beat a
-two-line rule does not deserve to ship, so the rule is reported alongside the model throughout.
+PR-AUC **0.911** (ROC-AUC 0.996, shown only because it is conventional — it flatters every
+model at 2% prevalence). **20 of 20 fraud episodes caught.** 22 false positives across 5,744
+legitimate transactions, a 0.38% false-positive rate.
+
+Recall is not uniform across attack styles, and the average hides that:
+
+| archetype | txn recall | episodes caught |
+|---|---|---|
+| `classic_burst` | 100.0% | 6/6 |
+| `slow_drain` | 100.0% | 3/3 |
+| `blend_in` | 75.7% | 5/5 |
+| `session_hijack` | 69.7% | 6/6 |
+
+Session hijacks are the weak point — by construction they carry no device-novelty signal at
+all, so the model has only velocity and amount to work with.
 
 ---
 
@@ -58,6 +69,10 @@ PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
 | `src/fraudspike/splits.py` | Temporal split assignment, pins the test-set hash |
 | `src/fraudspike/features.py` | 33 strictly backward-looking features |
 | `src/fraudspike/audit_features.py` | Flags any single feature that looks too good to be true |
+| `src/fraudspike/train.py` | Model selection + threshold tuning. **Cannot read the test split.** |
+| `src/fraudspike/evaluate.py` | The only script that opens the test set. Runs once. |
+| `reports/validation_report.md` | Grid, baselines, SMOTE ablation, chosen threshold |
+| `reports/test_report.md` | The held-out numbers |
 | `tests/test_causality.py` | Proves no feature can see the future |
 | `reports/data_audit.md` | Latest data audit output |
 | `reports/feature_audit.md` | Per-feature discriminative power, train split only |

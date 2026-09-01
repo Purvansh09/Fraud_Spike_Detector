@@ -1,8 +1,8 @@
 {
   "seed": 7,
-  "n_transactions": 34336,
-  "test_set_sha256": "0afd1a7565fd1d943be3292db83dc461a631af359dc95110651ad9b4a91b8bb3",
-  "test_set_size": 5857,
+  "n_transactions": 34329,
+  "test_set_sha256": "622d42b4fde8ed01df4715695440eed92e25d61e179635c05d1e2a9a30b60ca8",
+  "test_set_size": 5865,
   "boundaries": {
     "train": [
       0,
@@ -19,19 +19,19 @@
   },
   "per_split": {
     "train": {
-      "transactions": 22775,
-      "fraud": 460,
+      "transactions": 22772,
+      "fraud": 457,
       "episodes": 79
     },
     "val": {
-      "transactions": 5704,
-      "fraud": 135,
-      "episodes": 23
+      "transactions": 5692,
+      "fraud": 123,
+      "episodes": 21
     },
     "test": {
-      "transactions": 5857,
-      "fraud": 113,
-      "episodes": 18
+      "transactions": 5865,
+      "fraud": 121,
+      "episodes": 20
     }
   }
 }

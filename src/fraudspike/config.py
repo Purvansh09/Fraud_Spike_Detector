@@ -25,6 +25,41 @@ ALL_CATEGORIES = COMMON_CATEGORIES + HIGH_RISK_CATEGORIES
 MERCHANTS_PER_CATEGORY = 12
 
 
+# Real account-takeover fraud is not one template -- it is a mix of attack styles, and any
+# given attack shows only SOME of the markers. The first version of this generator fired
+# every marker on every episode, which made the conjunction trivially separable: a model
+# scored PR-AUC 1.0000 because the fraud device, used only inside a 12-minute burst, could
+# never age past 720 seconds while legitimate devices aged for weeks.
+#
+# Each archetype below deliberately gives up some markers, so that no single signal (and no
+# simple conjunction) is present across all fraud.
+FRAUD_ARCHETYPES: dict[str, dict] = {
+    # Stolen credentials used from the attacker's own device. The textbook spike.
+    "classic_burst": dict(
+        share=0.35, device="new", k=(4, 8), span_s=(180, 720), probes=(1, 2),
+        ramp=True, p_high_risk=0.80, p_foreign_city=0.70, p_night=0.60,
+    ),
+    # Malware or a stolen session cookie on the victim's OWN device. No new-device signal
+    # at all -- device age is weeks, and the city is usually home.
+    "session_hijack": dict(
+        share=0.25, device="known", k=(4, 8), span_s=(300, 1200), probes=(0, 1),
+        ramp=True, p_high_risk=0.65, p_foreign_city=0.15, p_night=0.45,
+    ),
+    # Paced deliberately to stay under velocity rules: the same 4-7 transactions spread
+    # over 45 minutes to 3 hours instead of minutes.
+    "slow_drain": dict(
+        share=0.20, device="new", k=(4, 7), span_s=(2700, 10800), probes=(0, 1),
+        ramp=True, p_high_risk=0.70, p_foreign_city=0.60, p_night=0.50,
+    ),
+    # An attacker imitating the victim: amounts drawn from the account's own spend
+    # distribution, categories from the account's own habits, no card-testing probes.
+    "blend_in": dict(
+        share=0.20, device="new", k=(4, 8), span_s=(300, 1800), probes=(0, 0),
+        ramp=False, p_high_risk=0.25, p_foreign_city=0.40, p_night=0.35,
+    ),
+}
+
+
 @dataclass(frozen=True)
 class GenConfig:
     """Every knob in the generator. Defaults are the frozen SPEC.md values."""
@@ -81,4 +116,6 @@ class GenConfig:
         "txn_id", "account_id", "timestamp", "amount",
         "merchant_id", "merchant_category", "device_id", "city", "channel",
     )
-    label_side_columns: tuple = ("txn_id", "is_fraud", "episode_id")
+    # `archetype` is label-side metadata: it enables per-attack-style recall reporting and
+    # must never reach the model, exactly like episode_id.
+    label_side_columns: tuple = ("txn_id", "is_fraud", "episode_id", "archetype")

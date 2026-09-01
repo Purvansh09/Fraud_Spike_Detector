@@ -21,6 +21,22 @@ Formally, an account experiences a spike episode when **all** of the following h
 | Merchant mix | skewed toward liquidation-friendly categories (`digital_goods`, `gift_cards`, `electronics`, `crypto`) that are rare or unseen for that account |
 | Hour | 60% of episodes fall in 00:00–05:00 local; 40% deliberately do not |
 
+### 1a. Attack archetypes (added 2026-08-31, see changelog)
+
+The table above describes one attack style. Real account takeover is a mix, and any given
+attack shows only *some* markers. Episodes are drawn from four archetypes:
+
+| archetype | share | device | pace | amount shape | what it gives up |
+|---|---|---|---|---|---|
+| `classic_burst` | 35% | unseen | 3–12 min | probes then ramp | nothing — the textbook case |
+| `session_hijack` | 25% | **the victim's own** | 5–20 min | ramp | no device-novelty signal at all |
+| `slow_drain` | 20% | unseen | 45 min – 3 h | ramp | no velocity spike |
+| `blend_in` | 20% | unseen | 5–30 min | the victim's own spend distribution | no amount or category anomaly |
+
+This mix is the load-bearing detail. Without it every fraud transaction carries every
+marker simultaneously, and the conjunction becomes trivially separable — see the changelog
+entry for the PR-AUC 1.0000 result that forced this change.
+
 **Every transaction inside an episode is labelled `is_fraud = 1`.** The label is carried at the
 transaction level because that is the unit the API scores in production, but the underlying
 phenomenon is episode-level — this is stated explicitly so that the evaluation section below
@@ -138,5 +154,20 @@ Reported on the held-out test set, once:
   feature set.
 - 2026-08-31 — scale raised from 400 to 600 accounts and the compromise rate from 8% to 20%, to
   put enough fraud episodes in the test window to report on. See the caveat in section 4.
+- 2026-08-31 — **fraud archetypes added after a perfect score exposed a generator defect.**
+  The first XGBoost run scored **validation PR-AUC 1.0000, precision and recall both 100%**,
+  and logistic regression reached F1 0.982. That is never a real result. Diagnosis: the fraud
+  device was used *only* inside its 3–12 minute episode and never again, so `device_age_secs`
+  was mathematically bounded at 720s for every fraud row while legitimate devices aged for
+  weeks — the two distributions were nearly disjoint, and that one feature carried 57% of
+  model importance. The deeper fault was that every episode fired *every* marker at once, so
+  the conjunction was trivially separable.
+  Fixed by modelling fraud as a distribution over four attack archetypes (section 1a) rather
+  than one template. Regenerated **once**; the resulting numbers were reported as they came
+  out. Post-fix: `device_age_secs` alone drops to AUC 0.882, 207 of 701 fraud rows now exceed
+  720s, and validation PR-AUC settles at 0.9444.
+  Recorded in full because the temptation here is to quietly keep the perfect score. The
+  discipline: the generator was changed for a defect justifiable *independently* of the
+  resulting metric, and it was not touched again afterwards.
 - 2026-08-31 — the dataset spans a 61st day holding 6 transactions: one legitimate checkout
   session that began at 23:5x on day 59 and ran past midnight. Realistic, left in place.

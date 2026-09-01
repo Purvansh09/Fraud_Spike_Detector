@@ -25,6 +25,7 @@ from .config import (
     CHANNELS,
     CITIES,
     COMMON_CATEGORIES,
+    FRAUD_ARCHETYPES,
     HIGH_RISK_CATEGORIES,
     MERCHANTS_PER_CATEGORY,
     GenConfig,
@@ -137,6 +138,7 @@ def _legit_txn(acct: dict, ts: float, rng, cfg: GenConfig, merchants) -> dict:
         "channel": str(rng.choice(CHANNELS, p=CHANNEL_WEIGHTS)),
         "is_fraud": 0,
         "episode_id": None,
+        "archetype": None,
     }
 
 
@@ -174,47 +176,69 @@ def generate_legit(cfg: GenConfig, accounts: list[dict], merchants, rng) -> list
 
 
 def generate_fraud(cfg: GenConfig, accounts: list[dict], merchants, rng) -> list[dict]:
-    """One takeover episode on each compromised account, per SPEC.md section 1."""
+    """One takeover episode per compromised account, drawn from the archetype mix.
+
+    Each archetype gives up some markers on purpose (see config.FRAUD_ARCHETYPES). A
+    session hijack has no new device at all; a slow drain has no velocity spike; a
+    blend-in attack has no amount anomaly. That heterogeneity is what stops the fraud
+    class from being a single separable conjunction.
+    """
     rows: list[dict] = []
     n_comp = int(round(cfg.compromised_share * cfg.n_accounts))
     victims = rng.choice(len(accounts), size=n_comp, replace=False)
 
+    names = list(FRAUD_ARCHETYPES)
+    shares = np.array([FRAUD_ARCHETYPES[n]["share"] for n in names], dtype=float)
+    shares /= shares.sum()
+
     for ep_no, idx in enumerate(victims):
         acct = accounts[int(idx)]
         episode_id = f"EP{ep_no:04d}"
+        style = str(rng.choice(names, p=shares))
+        a = FRAUD_ARCHETYPES[style]
 
         day = int(rng.integers(cfg.earliest_episode_day, cfg.n_days))
-        hour = rng.uniform(0, 5) if rng.random() < cfg.p_night_episode else rng.uniform(6, 23)
+        hour = rng.uniform(0, 5) if rng.random() < a["p_night"] else rng.uniform(6, 20)
         t0 = day * DAY_S + hour * 3600
 
-        k = int(rng.integers(cfg.burst_min, cfg.burst_max + 1))
-        span = rng.uniform(cfg.burst_span_min_s, cfg.burst_span_max_s)
+        k = int(rng.integers(a["k"][0], a["k"][1] + 1))
+        span = rng.uniform(*a["span_s"])
         offsets = np.sort(rng.uniform(0, span, size=k))
 
-        # A device never seen on this account before, and never seen again after.
-        device = f"DEVX_{episode_id}"
-        if rng.random() < cfg.p_foreign_city:
+        if a["device"] == "known":
+            # Session hijack: the attacker is riding the victim's own device, so there is
+            # no device-novelty signal whatsoever.
+            device = str(rng.choice(acct["devices"]))
+        else:
+            device = f"DEVX_{episode_id}"
+
+        if rng.random() < a["p_foreign_city"]:
             city = str(rng.choice([c for c in CITIES if c != acct["home_city"]]))
         else:
             city = acct["home_city"]
 
-        n_probes = int(rng.integers(cfg.n_probes_min, cfg.n_probes_max + 1))
+        n_probes = int(rng.integers(a["probes"][0], a["probes"][1] + 1))
         median_spend = float(np.exp(acct["log_mu"]))
 
         for j, off in enumerate(offsets):
             if j < n_probes:
                 # Card testing: does this credential work at all?
                 amount = round(float(rng.uniform(cfg.probe_amount_min, cfg.probe_amount_max)), 2)
-            else:
-                # Then escalate. Overlaps the legitimate right tail on purpose.
+            elif a["ramp"]:
+                # Escalate. Overlaps the legitimate right tail on purpose.
                 frac = (j - n_probes) / max(1, k - n_probes - 1)
                 factor = cfg.ramp_factor_min + frac * (cfg.ramp_factor_max - cfg.ramp_factor_min)
                 amount = round(median_spend * factor * float(rng.uniform(0.75, 1.3)), 2)
+            else:
+                # Blend-in: spend like the victim would, so amount carries no signal.
+                amount = _sample_amount(acct, rng)
 
-            if rng.random() < cfg.p_high_risk_category:
+            if rng.random() < a["p_high_risk"]:
                 cat = str(rng.choice(HIGH_RISK_CATEGORIES))
             else:
-                cat = str(rng.choice(ALL_CATEGORIES))
+                # Fall back to the victim's own habits rather than a uniform draw, so the
+                # non-high-risk fraud looks genuinely ordinary.
+                cat = str(rng.choice(ALL_CATEGORIES, p=acct["cat_weights"]))
 
             rows.append(
                 {
@@ -228,6 +252,7 @@ def generate_fraud(cfg: GenConfig, accounts: list[dict], merchants, rng) -> list
                     "channel": str(rng.choice(CHANNELS, p=CHANNEL_WEIGHTS)),
                     "is_fraud": 1,
                     "episode_id": episode_id,
+                    "archetype": style,
                 }
             )
     return rows
