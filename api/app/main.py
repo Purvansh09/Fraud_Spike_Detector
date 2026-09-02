@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,9 @@ async def lifespan(app: FastAPI):
     # per-request would dominate latency.
     STATE["scorer"] = Scorer()
     STATE["explainer"] = Explainer(STATE["scorer"].model, STATE["scorer"].features)
+    STATE["txns"] = pd.read_parquet(ROOT / "data/raw/transactions.parquet")
+    # Language generation is the slow part; an analyst re-opening a row should be instant.
+    STATE["explain_cache"] = {}
     yield
     STATE.clear()
 
@@ -151,8 +155,8 @@ def score(txn: Transaction, record: bool = True) -> ScoreResponse:
         top_factors=[
             Factor(
                 feature=c.feature,
-                description=c.gloss,
-                value=None if pd.isna(c.value) else c.value,
+                description=c.display_gloss,
+                value=None if pd.isna(c.display_value) else c.display_value,
                 shap=c.shap,
             )
             for c in contribs
@@ -161,6 +165,56 @@ def score(txn: Transaction, record: bool = True) -> ScoreResponse:
         reason_source=source,
         latency_ms=round(latency, 1),
     )
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(ROOT / "dashboard" / "index.html")
+
+
+@app.get("/explain/{txn_id}")
+def explain(txn_id: str) -> dict:
+    """Explain one already-scored transaction, on demand.
+
+    Deliberately separate from the dashboard's table load. Generating language costs a
+    2-5 second round trip, so the table renders instantly from local scores and this runs
+    only when an analyst opens a specific row. That is also the honest production shape:
+    the decision is synchronous, the narrative is not.
+    """
+    scorer: Scorer = STATE["scorer"]
+    explainer: Explainer = STATE["explainer"]
+
+    if txn_id in STATE["explain_cache"]:
+        return STATE["explain_cache"][txn_id]
+
+    txns = STATE["txns"]
+    row = txns[txns["txn_id"] == txn_id]
+    if row.empty:
+        raise HTTPException(404, f"unknown txn_id {txn_id}")
+
+    payload = {k: row.iloc[0][k] for k in TXN_FIELDS}
+    decision, X = scorer.decide(payload)
+    contribs = explainer.top_contributions(X, k=4)
+    reason, source = reason_for(decision.action, decision.score, contribs)
+
+    result = {
+        "txn_id": txn_id,
+        "score": decision.score,
+        "action": decision.action,
+        "reason": reason,
+        "reason_source": source,
+        "top_factors": [
+            {
+                "feature": c.feature,
+                "description": c.display_gloss,
+                "value": None if pd.isna(c.display_value) else round(float(c.display_value), 4),
+                "shap": round(c.shap, 4),
+            }
+            for c in contribs
+        ],
+    }
+    STATE["explain_cache"][txn_id] = result
+    return result
 
 
 @app.get("/demo/flagged")
@@ -192,10 +246,22 @@ def demo_flagged(limit: int = 50) -> dict:
     meta = txns[["txn_id", "account_id", "timestamp", "amount", "merchant_category", "city"]]
     df = df.merge(meta, on="txn_id")
 
-    flagged = df[df["action"] != "ALLOW"].sort_values("score", ascending=False).head(limit)
+    # Include fraud we MISSED, not just what we flagged. A dashboard that can only show
+    # its successes is a sales tool; the false positives and false negatives are the rows
+    # a reviewer actually needs to interrogate.
+    shown = df[(df["action"] != "ALLOW") | (df["is_fraud"] == 1)]
+    flagged = shown.sort_values("score", ascending=False).head(limit)
     tp = int(((df["action"] == "BLOCK") & (df["is_fraud"] == 1)).sum())
     fp = int(((df["action"] == "BLOCK") & (df["is_fraud"] == 0)).sum())
     fn = int(((df["action"] != "BLOCK") & (df["is_fraud"] == 1)).sum())
+
+    # Raw recall undersells a three-band system: fraud landing in REVIEW is still seen by
+    # a human. Report what actually happened to every fraud transaction.
+    is_f = df["is_fraud"] == 1
+    f_blocked = int((is_f & (df["action"] == "BLOCK")).sum())
+    f_review = int((is_f & (df["action"] == "REVIEW")).sum())
+    f_allowed = int((is_f & (df["action"] == "ALLOW")).sum())
+    total_fraud = f_blocked + f_review + f_allowed
 
     return {
         "running_metrics": {
@@ -203,6 +269,14 @@ def demo_flagged(limit: int = 50) -> dict:
             "recall": round(tp / (tp + fn), 4) if tp + fn else 0.0,
             "true_positives": tp, "false_positives": fp, "false_negatives": fn,
             "scope": "held-out test window, block band only",
+        },
+        "band_breakdown": {
+            "total_fraud": total_fraud,
+            "blocked": f_blocked,
+            "review": f_review,
+            "allowed": f_allowed,
+            "seen_or_blocked_pct": round((f_blocked + f_review) / total_fraud, 4)
+            if total_fraud else 0.0,
         },
         "flagged": [
             {

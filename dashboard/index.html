@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fraud-Spike Detector</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --line:#252a34; --ink:#e7e9ee; --dim:#949cad;
+    --block:#ff5c5c; --review:#f0b23c; --ok:#3ecf8e; --accent:#6aa6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+  header{padding:20px 24px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:18px;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:12.5px;margin-top:4px}
+  .wrap{padding:20px 24px;max-width:1400px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .card .label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .card .value{font-size:22px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .card .foot{color:var(--dim);font-size:11px;margin-top:2px}
+  .split{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
+  @media(max-width:1000px){.split{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .panel h2{margin:0;padding:12px 14px;font-size:13px;border-bottom:1px solid var(--line);
+            color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th{position:sticky;top:0;background:var(--panel);text-align:left;font-size:11px;color:var(--dim);
+     padding:8px 10px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em}
+  td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#1d212a}
+  tbody tr.sel{background:#232838;box-shadow:inset 3px 0 0 var(--accent)}
+  .scroll{max-height:62vh;overflow:auto}
+  .num{text-align:right}
+  .pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:600}
+  .BLOCK{background:rgba(255,92,92,.15);color:var(--block)}
+  .REVIEW{background:rgba(240,178,60,.15);color:var(--review)}
+  .ALLOW{background:rgba(62,207,142,.13);color:var(--ok)}
+  .truth-1{color:var(--block);font-weight:600}
+  .truth-0{color:var(--dim)}
+  .detail{padding:14px}
+  .reason{font-size:14px;line-height:1.55;margin:0 0 6px}
+  .src{font-size:11px;color:var(--dim);margin-bottom:14px}
+  .src b{color:var(--accent)}
+  .factor{margin-bottom:9px}
+  .factor .fname{font-size:12.5px}
+  .factor .bar{height:5px;background:#242936;border-radius:3px;margin-top:3px;overflow:hidden}
+  .factor .fill{height:100%;background:var(--accent)}
+  .factor .fval{font-size:11px;color:var(--dim)}
+  .muted{color:var(--dim);font-size:13px;padding:14px}
+  .foot-note{color:var(--dim);font-size:11.5px;margin-top:14px;line-height:1.6}
+  code{background:#20242e;padding:1px 5px;border-radius:4px;font-size:12px}
+  .filters{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .filters button{background:#1d212a;color:var(--dim);border:1px solid var(--line);
+    border-radius:99px;padding:4px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+  .filters button:hover{color:var(--ink)}
+  .filters button.on{background:var(--accent);color:#0f1115;border-color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>Fraud-Spike Detector</h1>
+  <div class="sub">Held-out test window &middot; scored once &middot; click any row for the model's reasoning</div>
+</header>
+
+<div class="wrap">
+  <div class="cards" id="cards"></div>
+
+  <div class="split">
+    <div class="panel">
+      <h2>Flagged transactions</h2>
+      <div class="filters" id="filters">
+        <button data-f="all" class="on">All</button>
+        <button data-f="blocked">Blocked</button>
+        <button data-f="review">Review</button>
+        <button data-f="fp">False positives</button>
+        <button data-f="fn">Missed fraud</button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th>Time</th><th>Account</th><th class="num">Amount</th><th>Category</th>
+            <th>City</th><th class="num">Score</th><th>Decision</th><th>Actually fraud</th>
+          </tr></thead>
+          <tbody id="rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Why this was flagged</h2>
+      <div id="detail" class="muted">Select a transaction.</div>
+    </div>
+  </div>
+
+  <div class="foot-note" id="note"></div>
+</div>
+
+<script>
+const fmtINR = n => "₹" + n.toLocaleString("en-IN", {maximumFractionDigits:0});
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let MODEL = null, ALL = [];
+
+const FILTERS = {
+  all:     r => true,
+  blocked: r => r.action === "BLOCK",
+  review:  r => r.action === "REVIEW",
+  // Blocked but legitimate: the customers we wrongly declined.
+  fp:      r => r.action === "BLOCK" && r.is_fraud === 0,
+  // Fraud that escaped the block band: what the detector let through.
+  fn:      r => r.is_fraud === 1 && r.action !== "BLOCK",
+};
+
+function applyFilter(name){
+  const rows = ALL.filter(FILTERS[name]);
+  renderRows(rows);
+  if (!rows.length)
+    document.getElementById("rows").innerHTML =
+      '<tr><td colspan="8" class="muted">No transactions in this category.</td></tr>';
+}
+
+async function boot(){
+  const [flag, model] = await Promise.all([
+    fetch("/demo/flagged?limit=400").then(r=>r.json()),
+    fetch("/model").then(r=>r.json())
+  ]);
+  MODEL = model;
+  ALL = flag.flagged;
+  renderCards(flag.running_metrics, model, flag.band_breakdown);
+  applyFilter("all");
+  document.querySelectorAll("#filters button").forEach(b =>
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#filters button").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+      applyFilter(b.dataset.f);
+    }));
+  document.getElementById("note").innerHTML =
+    "Precision and recall are computed on the <b>BLOCK</b> band only, over the held-out test "
+    + "window. Thresholds: review ≥ <code>" + model.thresholds.review.toFixed(4)
+    + "</code>, block ≥ <code>" + model.thresholds.block.toFixed(4) + "</code>. "
+    + esc(model.threshold_provenance);
+}
+
+function renderCards(m, model, band){
+  const t = model.held_out_test;
+  const cards = [
+    ["Precision", (m.precision*100).toFixed(1)+"%", m.true_positives+" caught / "+(m.true_positives+m.false_positives)+" blocked"],
+    ["Recall",    (m.recall*100).toFixed(1)+"%",    m.false_negatives+" fraud missed"],
+    ["PR-AUC",    t.pr_auc.toFixed(3),              "honest metric at 2% prevalence"],
+    ["Episodes",  t.episodes_caught,                "bursts with ≥1 txn flagged"],
+    ["False positives", m.false_positives,          "of 5,744 legitimate"],
+    ["Fraud reaching a human", (band.seen_or_blocked_pct*100).toFixed(1)+"%",
+       band.blocked+" blocked + "+band.review+" review · only "+band.allowed+" waved through"],
+  ];
+  document.getElementById("cards").innerHTML = cards.map(([l,v,f]) =>
+    `<div class="card"><div class="label">${l}</div><div class="value">${v}</div>
+     <div class="foot">${f}</div></div>`).join("");
+}
+
+function renderRows(rows){
+  document.getElementById("rows").innerHTML = rows.map(r => `
+    <tr data-id="${esc(r.txn_id)}">
+      <td>${esc(r.timestamp.slice(5,16))}</td>
+      <td>${esc(r.account_id)}</td>
+      <td class="num">${fmtINR(r.amount)}</td>
+      <td>${esc(r.merchant_category)}</td>
+      <td>${esc(r.city)}</td>
+      <td class="num">${r.score.toFixed(3)}</td>
+      <td><span class="pill ${esc(r.action)}">${esc(r.action)}</span></td>
+      <td class="truth-${r.is_fraud}">${r.is_fraud ? "yes — "+esc(r.archetype ?? "") : "no"}</td>
+    </tr>`).join("");
+
+  document.querySelectorAll("#rows tr").forEach(tr =>
+    tr.addEventListener("click", () => select(tr)));
+}
+
+async function select(tr){
+  document.querySelectorAll("#rows tr").forEach(x => x.classList.remove("sel"));
+  tr.classList.add("sel");
+  const id = tr.dataset.id;
+  const box = document.getElementById("detail");
+  box.className = "muted";
+  box.textContent = "Generating explanation…";
+
+  try{
+    const d = await fetch("/explain/" + encodeURIComponent(id)).then(r=>r.json());
+    const max = Math.max(...d.top_factors.map(f => Math.abs(f.shap)), 1e-9);
+    box.className = "detail";
+    box.innerHTML =
+      `<p class="reason">${esc(d.reason)}</p>
+       <div class="src">explanation by <b>${esc(d.reason_source)}</b>
+         &middot; score ${d.score.toFixed(3)} &middot; ${esc(d.action)}</div>`
+      + d.top_factors.map(f => `
+        <div class="factor">
+          <div class="fname">${esc(f.description)}</div>
+          <div class="fval">value ${f.value === null ? "unknown" : f.value.toLocaleString()}
+            &middot; SHAP ${f.shap > 0 ? "+" : ""}${f.shap}</div>
+          <div class="bar"><div class="fill" style="width:${Math.abs(f.shap)/max*100}%"></div></div>
+        </div>`).join("");
+  }catch(e){
+    box.className = "muted";
+    box.textContent = "Could not load explanation: " + e;
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

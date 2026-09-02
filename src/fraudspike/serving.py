@@ -26,8 +26,11 @@ import pandas as pd
 
 from .features import build
 
-RAW = Path("data/raw")
-MODELS = Path("models")
+# Anchored to the repo root, not the process cwd: uvicorn may be launched from
+# anywhere and a relative path would silently fail to find the model.
+_ROOT = Path(__file__).resolve().parents[2]
+RAW = _ROOT / "data/raw"
+MODELS = _ROOT / "models"
 
 # Columns a payment processor genuinely has at authorisation time.
 TXN_FIELDS = [

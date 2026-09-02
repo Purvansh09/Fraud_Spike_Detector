@@ -99,7 +99,8 @@ PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
 | `reports/cost_analysis.md` | Rupee analysis and where the recommendation breaks |
 | `src/fraudspike/serving.py` | Live scorer + account history store + decision bands |
 | `src/fraudspike/explain.py` | SHAP attribution, Claude reason, template fallback |
-| `api/app/main.py` | FastAPI service |
+| `api/app/main.py` | FastAPI service + dashboard route |
+| `dashboard/index.html` | Single-page dashboard, no build step |
 | `tests/test_causality.py` | Proves no feature can see the future |
 | `tests/test_serving.py` | Proves serving features match training features exactly |
 | `reports/data_audit.md` | Latest data audit output |
@@ -122,6 +123,30 @@ Three independent guards, in increasing order of how much they'd convince a scep
 ```bash
 ./.venv/Scripts/python.exe -m pytest tests/ -q
 ```
+
+## Dashboard
+
+Start the service and open <http://127.0.0.1:8017/>.
+
+The table lists every flagged transaction plus **every fraud the detector missed**, filterable
+by Blocked / Review / False positives / Missed fraud. Clicking a row fetches the SHAP
+attribution and a one-sentence explanation on demand — the table renders instantly from local
+scores, and only the language layer costs a round trip.
+
+Two things the filters make visible that a metrics table hides:
+
+- **The 22 false positives are not 22 unrelated mistakes.** Five of them are one account
+  (`ACC00162`) buying gift cards in Pune inside a two-minute window — a genuine shopping burst
+  that is close to indistinguishable from card testing. That is the confounder from `SPEC.md`
+  section 2 working exactly as designed, and the model losing to it.
+- **Raw recall undersells a three-band system.** Of 121 fraud transactions in the test window,
+  103 were blocked, 11 were held for human review, and only **7 were waved through entirely** —
+  so 94.2% reached a human or were stopped. Those 7 are all `session_hijack` and `blend_in`,
+  the two archetypes carrying no device-novelty signal.
+
+Built as one plain HTML file rather than React: it meets every Phase 6 requirement with no
+build step, no `node_modules`, and nothing that can break during a live demo. The plan's
+rationale for React was reusing JobAgent's setup, which does not exist in this repo.
 
 ## Running the service
 
