@@ -11,18 +11,27 @@ detector.
 
 ## Headline numbers
 
-**Held-out test set, 5,865 transactions, 121 fraud, scored exactly once** at the threshold
-chosen on validation. Full report: [`reports/test_report.md`](reports/test_report.md).
+**Held-out test set, 5,865 transactions, 121 fraud, scored exactly once**, reported at the
+deployed threshold (0.1282, chosen on validation in Phase 4).
 
 | | Precision | Recall | F1 |
 |---|---|---|---|
 | always-legitimate | 0.0% | 0.0% | 0.000 |
 | rule: burst AND new device | 67.9% | 31.4% | 0.429 |
-| **XGBoost** | **82.3%** | **84.3%** | **0.833** |
+| **XGBoost** | **82.4%** | **85.1%** | **0.837** |
 
 PR-AUC **0.911** (ROC-AUC 0.996, shown only because it is conventional — it flatters every
 model at 2% prevalence). **20 of 20 fraud episodes caught.** 22 false positives across 5,744
 legitimate transactions, a 0.38% false-positive rate.
+
+Of the 121 fraud transactions: **103 blocked, 11 held for human review, 7 waved through** — so
+94.2% were stopped or put in front of a person. Raw recall undersells a three-band system.
+
+> Two thresholds exist in this project and both were chosen on validation: 0.1349 (F1-optimal,
+> Phase 3) and 0.1282 (cost-optimal, deployed). The test scores were computed once and read at
+> both. [`reports/operating_point.md`](reports/operating_point.md) reconciles them;
+> [`reports/test_report.md`](reports/test_report.md) is the original Phase 3 record, kept
+> unedited.
 
 Recall is not uniform across attack styles, and the average hides that:
 
@@ -31,7 +40,7 @@ Recall is not uniform across attack styles, and the average hides that:
 | `classic_burst` | 100.0% | 6/6 |
 | `slow_drain` | 100.0% | 3/3 |
 | `blend_in` | 75.7% | 5/5 |
-| `session_hijack` | 69.7% | 6/6 |
+| `session_hijack` | 72.7% | 6/6 |
 
 Session hijacks are the weak point — by construction they carry no device-novelty signal at
 all, so the model has only velocity and amount to work with.
@@ -62,28 +71,37 @@ of a fraud*. A high-LTV lender should re-run it with their own figures.
 
 ## Quickstart
 
+The data, the trained model and every report are committed, so the service runs immediately:
+
 ```bash
 python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
-Then regenerate everything from the pinned seed:
-
 ```bash
-PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.generate
+./.venv/Scripts/python.exe -m uvicorn api.app.main:app --port 8017
 ```
 
-```bash
-PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.audit_data
-```
+Then open <http://127.0.0.1:8017/>. Demo script: [`DEMO.md`](DEMO.md).
+
+### Reproducing every number
+
+Nothing above requires this — it exists so the numbers can be checked rather than trusted.
+One script rebuilds the whole pipeline from the pinned seed, in dependency order:
 
 ```bash
-PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
+bash reproduce.sh
 ```
+
+**Verified on 2026-09-05:** regenerating produces byte-identical data files and the same
+test-set SHA-256 (`622d42b4fde8ed01...`) recorded in `reports/split_manifest.json`. If that
+hash ever changes, the held-out set was rebuilt and every test metric in this repo is void.
 
 ## Layout
 
 | Path | What |
 |---|---|
+| `DEMO.md` | Five-minute walkthrough script and the questions to expect |
+| `reproduce.sh` | Rebuilds everything from the seed, in order |
 | `SPEC.md` | The frozen label definition, confounders, and leakage controls. **Read this first.** |
 | `src/fraudspike/config.py` | Every generator knob, with the reasoning next to it |
 | `src/fraudspike/generate.py` | Synthetic transaction + fraud-episode generator |
@@ -94,7 +112,8 @@ PYTHONPATH=src ./.venv/Scripts/python.exe -m fraudspike.splits
 | `src/fraudspike/train.py` | Model selection + threshold tuning. **Cannot read the test split.** |
 | `src/fraudspike/evaluate.py` | The only script that opens the test set. Runs once. |
 | `reports/validation_report.md` | Grid, baselines, SMOTE ablation, chosen threshold |
-| `reports/test_report.md` | The held-out numbers |
+| `reports/test_report.md` | The held-out numbers, as recorded in Phase 3 |
+| `reports/operating_point.md` | Reconciles the F1 and cost-optimal thresholds |
 | `src/fraudspike/costs.py` | Cost model, threshold economics, sensitivity + stress test |
 | `reports/cost_analysis.md` | Rupee analysis and where the recommendation breaks |
 | `src/fraudspike/serving.py` | Live scorer + account history store + decision bands |

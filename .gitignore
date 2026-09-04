@@ -3,9 +3,13 @@ __pycache__/
 *.pyc
 .env
 .ipynb_checkpoints/
-models/*.joblib
 node_modules/
 dist/
 
+# models/ is deliberately NOT ignored either: the trained artifact is ~880 KB, and
+# committing it means a fresh clone can run the service and dashboard immediately
+# instead of failing on a missing model. Training is seeded, so it is reproducible
+# from `train.py` regardless -- this just removes a failure mode.
+#
 # data/ is deliberately NOT ignored: it is only ~1.2 MB and committing it lets a judge
 # reproduce every reported number without running the generator.
