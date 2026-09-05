@@ -1,11 +1,11 @@
 # Fraud-Spike Detector
 
-Detects **bursts of takeover fraud** — 4–8 transactions on one account inside a few minutes,
-from a device that account has never used — and returns a decision with a plain-English reason.
+Detects **bursts of takeover fraud**: four to eight transactions on one account within a few
+minutes, from a device the account has never used. Every flag comes back with a decision and a
+plain-English reason.
 
-Defence-only. This repository contains no fraud-generation capability beyond the synthetic data
-generator used to create a labelled training set, and nothing that describes how to evade the
-detector.
+Defence-only. The only thing here that produces fraud is the synthetic data generator that
+builds the training set. Nothing in this repo explains how to get past the detector.
 
 ---
 
@@ -20,12 +20,13 @@ deployed threshold (0.1282, chosen on validation in Phase 4).
 | rule: burst AND new device | 67.9% | 31.4% | 0.429 |
 | **XGBoost** | **82.4%** | **85.1%** | **0.837** |
 
-PR-AUC **0.911** (ROC-AUC 0.996, shown only because it is conventional — it flatters every
-model at 2% prevalence). **20 of 20 fraud episodes caught.** 22 false positives across 5,744
-legitimate transactions, a 0.38% false-positive rate.
+PR-AUC is **0.911**. ROC-AUC is 0.996, which we report only because people expect it; at 2%
+prevalence it makes every model look good. **All 20 fraud episodes were caught.** There were 22
+false positives across 5,744 legitimate transactions, a false-positive rate of 0.38%.
 
-Of the 121 fraud transactions: **103 blocked, 11 held for human review, 7 waved through** — so
-94.2% were stopped or put in front of a person. Raw recall undersells a three-band system.
+Of the 121 fraud transactions, **103 were blocked, 11 were held for human review, and 7 got
+through**. That means 94.2% were either stopped or put in front of a person. With three
+decision bands, raw recall undersells what the system actually does.
 
 > Two thresholds exist in this project and both were chosen on validation: 0.1349 (F1-optimal,
 > Phase 3) and 0.1282 (cost-optimal, deployed). The test scores were computed once and read at
@@ -42,8 +43,9 @@ Recall is not uniform across attack styles, and the average hides that:
 | `blend_in` | 75.7% | 5/5 |
 | `session_hijack` | 72.7% | 6/6 |
 
-Session hijacks are the weak point — by construction they carry no device-novelty signal at
-all, so the model has only velocity and amount to work with.
+Session hijacks give us the most trouble. The attacker rides a device the account already
+trusts, so there's no new device to notice. That leaves the model reading speed and spend, and
+not much else.
 
 ### What that is worth
 
@@ -57,15 +59,17 @@ At the operating threshold chosen on validation, over the 11-day test window
 | Residual fraud cost | ₹77,018 |
 | **Net saving vs no detector** | **₹877,603** |
 
-Savings are episode-aware: blocking the 3rd transaction of an 8-transaction burst prevents
-six, not one, because the account is frozen behind the decline.
+Savings are counted per episode, not per transaction. Block the third transaction of an
+eight-transaction burst and you prevent six, because the account is frozen behind the decline.
 
-The threshold is **completely insensitive** to false-positive pricing across every plausible
-assumption — because the average fraud ticket (₹6,844) is an order of magnitude larger than
-the cost of a wrong decline (~₹2,021). It only starts to move once a false positive costs
-about **₹5,000, roughly 73% of a fraudulent transaction**. So the claim is not "this is
-robust" but: *robust provided a wrongly declined customer costs you less than three-quarters
-of a fraud*. A high-LTV lender should re-run it with their own figures.
+The threshold barely moves no matter how we price false positives. The average fraud ticket is
+₹6,844 while a wrong decline costs around ₹2,021, so fraud dominates the arithmetic. It only
+starts to shift once a false positive costs about **₹5,000, roughly 73% of a fraudulent
+transaction**.
+
+So we won't claim the threshold is simply robust. It's robust as long as a wrongly declined
+customer costs you less than three-quarters of a fraud. A lender with high-value customers
+should re-run this with their own numbers.
 
 ---
 
@@ -85,16 +89,17 @@ Then open <http://127.0.0.1:8017/>. Demo script: [`DEMO.md`](DEMO.md).
 
 ### Reproducing every number
 
-Nothing above requires this — it exists so the numbers can be checked rather than trusted.
-One script rebuilds the whole pipeline from the pinned seed, in dependency order:
+You don't need this to run anything. It's here so you can check the numbers instead of
+taking our word for them. One script rebuilds the whole pipeline from the pinned seed, in
+order:
 
 ```bash
 bash reproduce.sh
 ```
 
-**Verified on 2026-09-05:** regenerating produces byte-identical data files and the same
-test-set SHA-256 (`622d42b4fde8ed01...`) recorded in `reports/split_manifest.json`. If that
-hash ever changes, the held-out set was rebuilt and every test metric in this repo is void.
+**Verified on 2026-09-05:** regenerating gives byte-identical data files and the same test-set
+SHA-256 (`622d42b4fde8ed01...`) recorded in `reports/split_manifest.json`. If that hash ever
+changes, someone rebuilt the held-out set, and every test metric here is void.
 
 ## Layout
 
@@ -128,16 +133,16 @@ hash ever changes, the held-out set was rebuilt and every test metric in this re
 
 ## How we know there is no leakage
 
-Three independent guards, in increasing order of how much they'd convince a sceptic:
+Three separate guards, roughly in order of how convincing they are:
 
-1. **Structural.** Labels live in a separate frame. The feature builder's input does not
-   contain `is_fraud` or `episode_id`, so it cannot use them even by accident.
-2. **Empirical.** `tests/test_causality.py` rebuilds every feature from a stream truncated at
-   day 10, 25, 40 and 50, and asserts each row is bit-for-bit identical to the same row built
-   from the full 60 days — NaN patterns included. Anything that peeked forward would differ.
-3. **The test is itself tested.** We planted a deliberate look-ahead feature (an account's
-   all-time mean amount) and confirmed the truncation test fails on all four cut points, then
-   removed it. A green suite that cannot go red proves nothing.
+1. **Structural.** Labels live in a separate frame that the feature builder never receives. It
+   can't use `is_fraud` or `episode_id` even by accident.
+2. **Empirical.** `tests/test_causality.py` rebuilds every feature from streams cut off at days
+   10, 25, 40 and 50, then checks each row matches the version built from all 60 days, right
+   down to which values are missing. A feature that looked ahead would come out different.
+3. **We tested the test.** We planted a look-ahead feature on purpose (an account's all-time
+   mean amount) and confirmed the truncation test failed at all four cut points, then took it
+   out. A suite that can't go red isn't proving anything.
 
 ```bash
 ./.venv/Scripts/python.exe -m pytest tests/ -q
@@ -147,25 +152,24 @@ Three independent guards, in increasing order of how much they'd convince a scep
 
 Start the service and open <http://127.0.0.1:8017/>.
 
-The table lists every flagged transaction plus **every fraud the detector missed**, filterable
-by Blocked / Review / False positives / Missed fraud. Clicking a row fetches the SHAP
-attribution and a one-sentence explanation on demand — the table renders instantly from local
-scores, and only the language layer costs a round trip.
+The table lists every flagged transaction and **every fraud the detector missed**, filterable
+by Blocked, Review, False positives, and Missed fraud. Click a row and it fetches the SHAP
+attribution and a one-sentence explanation. The table renders instantly from local scores; only
+the wording costs a round trip.
 
-Two things the filters make visible that a metrics table hides:
+Two things the filters show that a metrics table can't:
 
-- **The 22 false positives are not 22 unrelated mistakes.** Five of them are one account
-  (`ACC00162`) buying gift cards in Pune inside a two-minute window — a genuine shopping burst
-  that is close to indistinguishable from card testing. That is the confounder from `SPEC.md`
-  section 2 working exactly as designed, and the model losing to it.
-- **Raw recall undersells a three-band system.** Of 121 fraud transactions in the test window,
-  103 were blocked, 11 were held for human review, and only **7 were waved through entirely** —
-  so 94.2% reached a human or were stopped. Those 7 are all `session_hijack` and `blend_in`,
-  the two archetypes carrying no device-novelty signal.
+- **The 22 false positives aren't 22 separate mistakes.** Five of them are one account
+  (`ACC00162`) buying gift cards in Pune inside a two-minute window. That's a real shopping
+  burst, and it looks almost exactly like card testing. The confounder from `SPEC.md` section 2
+  is doing its job, and the model is losing to it fairly.
+- **Raw recall undersells three bands.** Of 121 fraud transactions, 103 were blocked, 11 went
+  to human review, and only **7 got through**. So 94.2% were stopped or seen by a person. All 7
+  misses are `session_hijack` and `blend_in`, the two archetypes with no device-novelty signal.
 
-Built as one plain HTML file rather than React: it meets every Phase 6 requirement with no
-build step, no `node_modules`, and nothing that can break during a live demo. The plan's
-rationale for React was reusing JobAgent's setup, which does not exist in this repo.
+This is one plain HTML file, not React. It does everything Phase 6 asked for with no build
+step, no `node_modules`, and nothing that can break mid-demo. The original plan chose React to
+reuse JobAgent's setup, but that setup doesn't exist in this repo.
 
 ## Running the service
 
@@ -185,23 +189,25 @@ Decision bands, both calibrated on validation and never on test:
 | `REVIEW` | 0.0071 – 0.1282 | hold for a human; the band retains 95% fraud recall |
 | `BLOCK` | >= 0.1282 | decline; this is the Phase 4 cost-optimal point |
 
-Explanations are optional by design. Set `ANTHROPIC_API_KEY` in `.env` (see `.env.example`)
-and Claude phrases the SHAP attributions; without a key, a deterministic template renders the
-same facts. **The decision never depends on the API** — Claude is given the attributions and
-asked to phrase them, never asked whether the transaction is fraud, and its output is
-generated after the decision is already made.
+Explanations are optional on purpose. Put `ANTHROPIC_API_KEY` in `.env` (see `.env.example`)
+and Claude will phrase the SHAP attributions. Without a key, a fixed template states the same
+facts.
+
+**The decision never depends on the API.** Claude gets the attributions and is asked to word
+them. It is never asked whether the transaction is fraud, and it runs after the decision has
+already been made.
 
 ## Why synthetic data
 
-Public fraud datasets (the ULB Kaggle set, for instance) are single-transaction snapshots with
-no account identifiers or timestamp sequences, so velocity and burst features — the entire
-subject of this project — cannot be built on them. Generating the data means we control the
-ground truth exactly and can guarantee a clean split.
+Public fraud datasets, like the ULB Kaggle set, are single-transaction snapshots with no
+account IDs and no timestamp sequences. Velocity and burst features are the whole point of this
+project, and you cannot build them on that data. Generating our own means we know the ground
+truth exactly and can guarantee a clean split.
 
-The obvious objection is that a generator can be tuned until the model looks good. Two things
-guard against that: `SPEC.md` was frozen *before* any data was generated, and `audit_data.py`
-adversarially checks that no single column separates the classes. It has already caught one
-real leak — see the SPEC changelog.
+The obvious objection is that you can keep tuning a generator until the model looks good. Two
+things stop that. `SPEC.md` was frozen *before* any data existed, and `audit_data.py` attacks
+our own dataset to check that no single column separates the classes. It has already caught one
+real leak; the SPEC changelog has the details.
 
 ## Notes
 
