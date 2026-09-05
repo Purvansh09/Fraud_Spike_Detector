@@ -6,6 +6,9 @@ __pycache__/
 node_modules/
 dist/
 
+# Editor/agent tooling, not part of the project.
+.claude/
+
 # models/ is deliberately NOT ignored either: the trained artifact is ~880 KB, and
 # committing it means a fresh clone can run the service and dashboard immediately
 # instead of failing on a missing model. Training is seeded, so it is reproducible
